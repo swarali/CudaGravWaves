@@ -61,20 +61,22 @@ float signal(double fr, double t)
 
 int main()
 {
-	
+	int deviceCount;
 	int i, j, k=0, temp1;
 	int t, batch;
 	int nx, NUM;
 	float samp, fr, tempfr;
 	float  *d_device_cor, *h_device_cor;
 	cufftHandle plan;
-	cufftComplex *d_temp1, *h_temp1;	
-	cufftComplex *h_data1, *d_data1;
+//	cufftComplex *d_temp1, *h_temp1;	
+//	cufftComplex *h_data1, *d_data1;
 	float temp, sum;
-	float memsettime;
-	cudaEvent_t start,stop;
+//	float memsettime;
+//	cudaEvent_t start,stop;
 	FILE *file;
 
+	cudaGetDeviceCount(&deviceCount);
+	printf("Number of devices on this node = %d\n", deviceCount);
 	file = fopen("cor_time1gpu.txt","w"); 
 
 	printf("Frequency : ");
@@ -97,10 +99,19 @@ int main()
 	scanf("%d", &batch);
 //	batch =100;
 
+//	batch-=10;
 	k= NUM;
 	while(k--)
 	{
-		batch+=100;	
+	
+		cufftComplex **d_temp1, **h_temp1;	
+		cufftComplex *h_data1, **d_data1;
+	
+		d_temp1 = (cufftComplex * *)malloc(sizeof(cufftComplex *)*deviceCount);
+		h_temp1 = (cufftComplex * *)malloc(sizeof(cufftComplex *)*deviceCount);
+	
+		d_data1 = (cufftComplex * *)malloc(sizeof(cufftComplex *)*deviceCount);
+	
 
 		temp1 = 2*(int)fr + 1;
 		temp1 = t*temp1;
@@ -114,12 +125,15 @@ int main()
 		nx = (1<<count);
 	
 	//	nx = samp *t;
-		
 		h_device_cor= (float *)malloc(sizeof(float) * batch);	
 	
-		h_temp1 = (cufftComplex *)malloc(sizeof(cufftComplex) * nx * batch);
 		h_data1 = (cufftComplex *)malloc(sizeof(cufftComplex) * nx );
-
+	
+		for(i=0;i<deviceCount;i++)
+		{
+			h_temp1[i] = (cufftComplex *)malloc(sizeof(cufftComplex) * nx *( (i+1)*batch/deviceCount - i*batch/deviceCount));			
+		}
+			
 		sum =0.0f;
 		for(i=0;i<nx;i++)
 		{
@@ -127,55 +141,67 @@ int main()
 			temp = signal((double)fr, (double)i/samp);
 			h_data1[i].x = temp;
 			h_data1[i].y = 0;
-			sum+=temp*temp;
-	
+			sum+=temp*temp;	
 		}
 		
 		//normalising the data
 		for(i=0;i<nx;i++)
 			h_data1[i].x /=(sqrt(nx*sum));
 	
-	
-		for(j=0;j<batch;j++)
+		int dev;
+			
+		for(dev=0;dev<deviceCount;dev++)
+		//for(j=0;j<batch;j++)
 		{	
-			tempfr = (fr + (float)(j +1)/batch -0.5);
-			sum =0.0f;
-			for(i=0;i<nx;i++)
+			j=0;
+			while(j<( (dev+1)*batch/deviceCount - dev*batch/deviceCount))
 			{
-	//			temp = sin(2*PI*i*(fr -0.5 + (float)j/batch)/samp)/sqrt((float)nx/2);				
-				temp = signal((double)tempfr, (double)i/samp);	
-				h_temp1[j*nx + i].x = temp;
-				h_temp1[j*nx + i].y = 0;
-				sum += temp*temp;
+				tempfr = (fr + (float)(j +1)/batch -0.5);
+				sum =0.0f;
+			
+				for(i=0;i<nx;i++)
+				{
+	//				temp = sin(2*PI*i*(fr -0.5 + (float)j/batch)/samp)/sqrt((float)nx/2);				
+					temp = signal((double)tempfr, (double)i/samp);	
+					h_temp1[dev][j*nx + i].x = temp;
+					h_temp1[dev][j*nx + i].y = 0;
+					sum += temp*temp;
+				}
+	//				normalising the template values	
+				for(i=0;i<nx;i++)
+					h_temp1[dev][j*nx+i].x/=(sqrt(nx*sum));
+	
+				j++;
 			}
-			//normalising the template values	
-			for(i=0;i<nx;i++)
-				h_temp1[j*nx+i].x/=(sqrt(nx*sum));
 	
 		}
 
-		cudaEventCreate(&start);
-		cudaEventCreate(&stop);
+//		cudaEventCreate(&start);
+//		cudaEventCreate(&stop);
 
+		for(dev=0;dev<deviceCount;dev++)
+		{
+		
+		cudaSetDevice(dev);
 		cudaThreadSynchronize();
-		cudaEventRecord(start,0);
+//		cudaEventRecord(start,0);
 	
-		cudaMalloc((void**)&d_temp1, nx * batch * sizeof(cufftComplex));
-		cudaMalloc((void**)&d_data1,  nx * sizeof(cufftComplex));
+		cudaMalloc((void**)&d_temp1[dev], ( (dev+1)*batch/deviceCount - dev*batch/deviceCount) * nx * sizeof(cufftComplex));
+		cudaMalloc((void**)&d_data1[dev],  nx * sizeof(cufftComplex));
 	
-		cudaMemcpy(d_temp1, h_temp1, nx * batch * sizeof(cufftComplex), cudaMemcpyHostToDevice);
-		cudaMemcpy(d_data1, h_data1, nx * sizeof(cufftComplex), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_temp1[dev], h_temp1[dev],( (dev+1)*batch/deviceCount - dev*batch/deviceCount) * nx * sizeof(cufftComplex), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_data1[dev], h_data1, nx * sizeof(cufftComplex), cudaMemcpyHostToDevice);
 
 		cudaErrorCheck("Memory Copy Error");
 	
 		//FFT of temp
 		cufftPlan1d(&plan, nx, CUFFT_C2C, batch);
-		cufftExecC2C(plan, d_temp1, d_temp1,CUFFT_FORWARD);
+		cufftExecC2C(plan, d_temp1[dev], d_temp1[dev],CUFFT_FORWARD);
 		cufftDestroy(plan);
 		
 		//FFT of data
 		cufftPlan1d(&plan, nx, CUFFT_C2C, 1);
-		cufftExecC2C(plan, d_data1, d_data1,CUFFT_FORWARD);
+		cufftExecC2C(plan, d_data1[dev], d_data1[dev],CUFFT_FORWARD);
 		cufftDestroy(plan);
 	
 		//Correlation by taking the vector-matrix product
@@ -184,28 +210,47 @@ int main()
 		cublasCreate (& handle );
 		cudaMalloc((void**)&d_device_cor,  batch * sizeof(float));	
 		
-		cublasSgemv(handle,CUBLAS_OP_T,2*nx,batch,&al,(float *)d_temp1,2*nx,(float *)d_data1,1,&bet,d_device_cor,1);
+		cublasSgemv(handle,CUBLAS_OP_T,2*nx,( (dev+1)*batch/deviceCount - dev*batch/deviceCount),&al,(float *)d_temp1[dev],2*nx,(float *)d_data1[dev],1,&bet,&d_device_cor[dev*batch/deviceCount],1);
 
-		cudaMemcpy(h_device_cor, d_device_cor, (batch * sizeof(float)), cudaMemcpyDeviceToHost);
-
-		cudaEventRecord(stop,0);
+		cudaMemcpy(&h_device_cor[dev*batch/deviceCount], &d_device_cor[dev*batch/deviceCount], (( (dev+1)*batch/deviceCount - dev*batch/deviceCount) * sizeof(float)), cudaMemcpyDeviceToHost);
 		cudaThreadSynchronize();	
-
-		cudaEventElapsedTime(&memsettime, start, stop);
+		}
+//		cudaEventRecord(stop,0);
+//		cudaThreadSynchronize();	
+		
+//		cudaEventElapsedTime(&memsettime, start, stop);
 
 		//printing correlation coefficients
-//		for(i=0;i<batch;i++)
-//			printf("fr : %f : %f \n", (fr + (float)(i +1)/batch -0.5), h_device_cor[i]);
+		printf("\n Batch : %d\n", batch);
+		for(i=0;i<batch;i++)
+			printf("%d : fr : %f : %f \n",i, (fr + (float)(i +1)/batch -0.5), h_device_cor[i]);
 
-		printf("%d  %f\n",batch, memsettime/1000);
-		fprintf(file,"%d\t%lf\n",batch,memsettime/1000);
+//		printf("%d  %f\n",batch, memsettime/1000);
+//		fprintf(file,"%d\t%lf\n",batch,memsettime/1000);
 
-		cudaFree(d_temp1);
+//		cufftComplex **d_temp1, **h_temp1;	
+//		cufftComplex *h_data1, **d_data1;
+	
+		cudaErrorCheck("On line 235\n");
+	
+		for(i=0;i<deviceCount;i++)
+		{
+			cudaFree(d_temp1[i]);
+			free(h_temp1[i]);
+			cudaFree(d_data1[i]);
+					
+		}
+		
+		cudaErrorCheck("On line 245\n");
+		
+		free(d_temp1);
 		free(h_temp1);
-		cudaFree(d_data1);
+		free(d_data1);
 		free(h_data1);
 		free(h_device_cor);
 		cudaFree(d_device_cor);
+		
+		batch+=10;	
 	}
 
 	fclose(file);
