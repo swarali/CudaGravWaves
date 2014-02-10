@@ -59,4 +59,22 @@
 	Test Input values : Frequency : 10, Time period : 86400
 
 
+5.SOP	//TODO - Add compile and run options along with test input
+	a.cpu_measure.c
+		Measures the time taken for correlation on CPU
+		Calulates correlation coefficient serial code by taking the inner product of fourier tranform
+		-Uses the cor_host function from GPU/reportcode.c for doing correlation
 
+	b.four1.c
+		For computing FFT
+		-with minor changes from MatchedfilteringC/four1.c to improve efficiency
+	
+	c.signal.c
+		Signal function - generates gravitational wave signal
+		
+	d.gpu_measure.cu
+		Measures the time taken for correlation on CPU
+		Calculates correlation coefficient GPU code by using CUBLAS library function - cublasSgemv : which takes matrix and vector product
+		
+	
+		
