@@ -33,7 +33,7 @@
    c. plotdata.c :
 	plots data from a file input using gnuplot
 
-3.GPU
+3.GPU ://TODO - Add cpu_measure.c and gpu_measure.cu, Add/Change compile and run options of all the files
    a. reportcode1.c :
 	Calculates correlation for the given frequency, number of samples, sampling frequency and time period (uses four1.c)
 	Note : sampling frequency * timeperiod must be power of 2
@@ -43,7 +43,7 @@
 	Test Input values : Sampling frequency : 32, Time period : 8, Number of Samples : 250, Frequency : 100
 
    b. reportcode2.cu :
-	Calculates correlation on GPU using cudafft library[Running on windows]
+	Calculates correlation on GPU using cudafft library using signal function from ContinuousGrav/wave[Running on windows]
 	Note : sampling frequency * timeperiod must be power of 2
 
 	Run:>nvcc reportcode2.cu -lcufft
@@ -59,7 +59,7 @@
 	Test Input values : Frequency : 10, Time period : 86400
 
 
-5.SOP	//TODO - Add compile and run options along with test input
+5.SOP	://TODO - Add compile and run options along with test input
 	a.cpu_measure.c
 		Measures the time taken for correlation on CPU
 		Calulates correlation coefficient serial code by taking the inner product of fourier tranform
